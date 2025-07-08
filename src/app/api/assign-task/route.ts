@@ -29,25 +29,31 @@ export async function POST(req: Request) {
     let successCount = 0;
     let failedEmails: string[] = [];
 
-    for (const email of employeeEmails) {
-      const employee = await Employee.findOne({ email });
+    // Run task assignment and emails in parallel
+    await Promise.all(
+      employeeEmails.map(async (email) => {
+        try {
+          const employee = await Employee.findOne({ email });
 
-      if (!employee) {
-        console.warn(`❌ Employee not found: ${email}`);
-        failedEmails.push(email);
-        continue;
-      }
+          if (!employee) {
+            console.warn(`❌ Employee not found: ${email}`);
+            failedEmails.push(email);
+            return;
+          }
 
-      // Add task to employee
-      employee.tasks.push(newTask);
-      employee.taskSummary.newTask = (employee.taskSummary?.newTask || 0) + 1;
-      await employee.save();
+          employee.tasks.push(newTask);
+          employee.taskSummary.newTask = (employee.taskSummary?.newTask || 0) + 1;
+          await employee.save();
 
-      // Send email
-      await sendTaskAssignedEmail(employee.email, title, 'Admin');
+          await sendTaskAssignedEmail(employee.email, title, 'Admin');
 
-      successCount++;
-    }
+          successCount++;
+        } catch (err) {
+          console.error(`❌ Failed to assign task to ${email}:`, err);
+          failedEmails.push(email);
+        }
+      })
+    );
 
     return NextResponse.json({
       message: `✅ Task assigned to ${successCount} employee(s)`,
